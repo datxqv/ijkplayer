@@ -69,6 +69,8 @@
 #include "version.h"
 #include "ijkmeta.h"
 
+#define FFP_RTSP_RT_SUPPORT
+
 #ifndef AV_CODEC_FLAG2_FAST
 #define AV_CODEC_FLAG2_FAST CODEC_FLAG2_FAST
 #endif
@@ -335,8 +337,10 @@ static int packet_queue_get_or_buffering(FFPlayer *ffp, PacketQueue *q, AVPacket
         if (new_packet < 0)
             return -1;
         else if (new_packet == 0) {
+#ifndef FFP_RTSP_RT_SUPPORT
             if (q->is_buffer_indicator && !*finished)
                 ffp_toggle_buffering(ffp, 1);
+#endif
             new_packet = packet_queue_get(q, pkt, 1, serial);
             if (new_packet < 0)
                 return -1;
@@ -521,10 +525,12 @@ static Frame *frame_queue_peek(FrameQueue *f)
     return &f->queue[(f->rindex + f->rindex_shown) % f->max_size];
 }
 
+#ifndef FFP_RTSP_RT_SUPPORT
 static Frame *frame_queue_peek_next(FrameQueue *f)
 {
     return &f->queue[(f->rindex + f->rindex_shown + 1) % f->max_size];
 }
+#endif
 
 static Frame *frame_queue_peek_last(FrameQueue *f)
 {
@@ -588,6 +594,7 @@ static void frame_queue_next(FrameQueue *f)
     SDL_UnlockMutex(f->mutex);
 }
 
+#ifndef FFP_RTSP_RT_SUPPORT
 /* jump back to the previous frame if available by resetting rindex_shown */
 static int frame_queue_prev(FrameQueue *f)
 {
@@ -595,6 +602,7 @@ static int frame_queue_prev(FrameQueue *f)
     f->rindex_shown = 0;
     return ret;
 }
+#endif
 
 /* return the number of undisplayed frames in the queue */
 static int frame_queue_nb_remaining(FrameQueue *f)
@@ -950,6 +958,7 @@ static void step_to_next_frame_l(FFPlayer *ffp)
     is->step = 1;
 }
 
+#ifndef FFP_RTSP_RT_SUPPORT
 static double compute_target_delay(FFPlayer *ffp, double delay, VideoState *is)
 {
     double sync_threshold, diff = 0;
@@ -1004,6 +1013,7 @@ static void update_video_pts(VideoState *is, double pts, int64_t pos, int serial
     set_clock(&is->vidclk, pts, serial);
     sync_clock_to_slave(&is->extclk, &is->vidclk);
 }
+#endif
 
 /* called to display each frame */
 static void video_refresh(FFPlayer *opaque, double *remaining_time)
@@ -1029,20 +1039,25 @@ static void video_refresh(FFPlayer *opaque, double *remaining_time)
     }
 
     if (is->video_st) {
+#ifndef FFP_RTSP_RT_SUPPORT
         int redisplay = 0;
         if (is->force_refresh)
             redisplay = frame_queue_prev(&is->pictq);
+#endif
 retry:
         if (frame_queue_nb_remaining(&is->pictq) == 0) {
             // nothing to do, no picture to display in the queue
         } else {
+#ifndef FFP_RTSP_RT_SUPPORT
             double last_duration, duration, delay;
+#endif
             Frame *vp, *lastvp;
 
             /* dequeue the picture */
             lastvp = frame_queue_peek_last(&is->pictq);
             vp = frame_queue_peek(&is->pictq);
 
+#ifndef FFP_RTSP_RT_SUPPORT
             if (vp->serial != is->videoq.serial) {
                 frame_queue_next(&is->pictq);
                 redisplay = 0;
@@ -1093,6 +1108,7 @@ retry:
 
             // FFP_MERGE: if (is->subtitle_st) { {...}
 
+#endif
 display:
             /* display picture */
             if (!ffp->display_disable && is->show_mode == SHOW_MODE_VIDEO)
@@ -1100,6 +1116,7 @@ display:
 
             frame_queue_next(&is->pictq);
 
+#ifndef FFP_RTSP_RT_SUPPORT
             SDL_LockMutex(ffp->is->play_mutex);
             if (is->step) {
                 is->step = 0;
@@ -1107,6 +1124,7 @@ display:
                     stream_update_pause_l(ffp);
             }
             SDL_UnlockMutex(ffp->is->play_mutex);
+#endif
         }
     }
     is->force_refresh = 0;
